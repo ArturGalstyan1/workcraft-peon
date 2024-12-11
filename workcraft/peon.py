@@ -3,6 +3,7 @@ import threading
 import uuid
 from queue import Queue
 
+import requests
 from loguru import logger
 from websockets import ConnectionClosed, ConnectionClosedOK
 from websockets.sync.client import ClientConnection, connect as sync_connect
@@ -29,8 +30,8 @@ class Peon:
         )
 
         self._heartbeat_thread = threading.Thread(target=self._heartbeat, daemon=True)
-
         self._processor_thread = threading.Thread(target=self._process, daemon=True)
+        self._statistics_thread = threading.Thread(target=self._statistics, daemon=True)
 
         self._stop_event = threading.Event()
 
@@ -39,12 +40,34 @@ class Peon:
         self._websocket_thread.start()
         self._heartbeat_thread.start()
         self._processor_thread.start()
+        self._statistics_thread.start()
         try:
             while not self._stop_event.is_set():
                 self._stop_event.wait(1)  # Wait with timeout
         except KeyboardInterrupt:
             logger.info("Received keyboard interrupt")
             self.stop()
+
+    def _statistics(self) -> None:
+        while self.working and not self._stop_event.is_set():
+            # print stats for now
+            logger.info(f"Queue size: {self.queue.qsize()}")
+            try:
+                res = requests.post(
+                    self.workcraft.stronghold_url + f"/api/peons/{self.id}/statistics",
+                    json={
+                        "type": "queue",
+                        "value": {
+                            "size": self.queue.qsize(),
+                        },
+                    },
+                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                )
+                print(res.text)
+            except Exception as e:
+                logger.error(f"Failed to send statistics: {e}")
+
+            self._stop_event.wait(5)
 
     def _process(self) -> None:
         while self.working and not self._stop_event.is_set():
@@ -60,14 +83,19 @@ class Peon:
                 logger.info(f"Processing task {task}, type: {type(task)}")
                 updated_task = self.workcraft.execute(task)
                 try:
-                    self.websocket.send(
-                        json.dumps(
-                            {
-                                "type": "task_done",
-                                "message": Task.to_stronghold(updated_task),
-                            }
-                        )
+                    res = requests.post(
+                        f"{self.workcraft.stronghold_url}/api/tasks/{task.id}/update",
+                        headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                        json=Task.to_stronghold(updated_task),
                     )
+
+                    if 200 <= res.status_code < 300:
+                        logger.info("Task updated successfully")
+                    else:
+                        logger.error(
+                            f"Failed to update task: {res.status_code} - {res.text}"
+                        )
+
                     logger.info(f"Task {task.id} processed successfully")
                 except Exception as e:
                     logger.error(f"Failed to send task: {e}")
@@ -115,10 +143,24 @@ class Peon:
                     if msg["type"] == "new_task":
                         task = Task.model_validate(msg["message"])
                         self.queue.put(task)
-                        # send acknoledgement
-                        self.websocket.send(
-                            json.dumps({"type": "ack", "message": {"id": task.id}})
-                        )
+
+                        try:
+                            res = requests.post(
+                                self.workcraft.stronghold_url
+                                + f"/api/tasks/{task.id}/acknowledgement",
+                                headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                                json={"peon_id": self.id},
+                            )
+
+                            if 200 <= res.status_code < 300:
+                                logger.info("Task acknowledgement sent successfully")
+                            else:
+                                logger.error(
+                                    f"Failed to send task acknowledgement: {res.text}"
+                                )
+
+                        except Exception as e:
+                            logger.error(f"Failed to send task acknowledgement: {e}")
                 except TimeoutError:
                     # Timeout is expected, continue the loop to check stop conditions
                     continue
@@ -148,6 +190,7 @@ class Peon:
             self._keep_alive_thread,
             self._heartbeat_thread,
             self._processor_thread,
+            self._statistics_thread,
         ]
 
         for thread in threads:
