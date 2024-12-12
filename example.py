@@ -24,6 +24,7 @@ global_counter = 0
 def simple_task(task_id: str, a: str) -> int:
     print(task_id, len(a))
     time.sleep(5)
+    # raise ValueError("This is a test error mon")
 
     return 0
 

@@ -1,4 +1,5 @@
 import hashlib
+import json
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -26,9 +27,9 @@ class TaskPayload(BaseModel):
 class Task(BaseModel):
     id: str
     task_name: str
-    status: Literal["PENDING", "RUNNING", "SUCCESS", "FAILURE", "INVALID"] = Field(
-        default="PENDING"
-    )
+    status: Literal[
+        "PENDING", "RUNNING", "SUCCESS", "FAILURE", "INVALID", "CANCELLED"
+    ] = Field(default="PENDING")
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     peon_id: str | None = None
@@ -144,7 +145,7 @@ class Workcraft:
             result = task_fn(
                 task.id, *task.payload.task_args, **task.payload.task_kwargs
             )
-            task.result = result
+            task.result = json.dumps(result)
             task.status = "SUCCESS"
         except Exception as e:
             import traceback
@@ -153,6 +154,7 @@ class Workcraft:
             logger.error(f"Failed to execute task: {e}")
             task.status = "FAILURE"
             task.result = str(e)
+            task.retry_count += 1
         finally:
             task.updated_at = datetime.now()
             return task
