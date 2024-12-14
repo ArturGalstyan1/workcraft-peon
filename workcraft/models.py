@@ -139,7 +139,6 @@ class Workcraft:
         return decorator
 
     def execute(self, task: Task) -> Task:
-        logger.info(f"Executing task {task.id}, type {type(task)}, and task {task}")
         try:
             task_fn = self.tasks[task.task_name]
             result = task_fn(
@@ -178,7 +177,7 @@ class Workcraft:
                 "retry_limit": retry_limit,
             }
             requests.post(
-                f"{self.stronghold_url}/api/tasks",
+                f"{self.stronghold_url}/api/task",
                 json=task,
                 headers={
                     "Content-Type": "application/json",
@@ -189,3 +188,31 @@ class Workcraft:
             logger.error(f"Failed to send task: {e}")
             raise e
         return id
+
+
+class State(BaseModel):
+    id: str
+    status: Literal["IDLE", "PREPARING", "WORKING", "OFFLINE"]
+    current_task: str | None = None
+    queues: list[str] | None = None
+    last_heartbeat: datetime = Field(default_factory=datetime.now)
+
+    def update_and_return(self, **kwargs) -> "State":
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        setattr(self, "last_heartbeat", datetime.now())
+        return self
+
+    def to_stronghold(self) -> dict:
+        queues = None
+        if self.queues is not None:
+            queues = "['" + "','".join(self.queues) + "']"
+
+        update_json = {
+            "current_task": self.current_task if self.current_task else None,
+            "status": self.status,
+            "last_heartbeat": self.last_heartbeat.isoformat(),
+            "queues": queues,
+            "id": self.id,
+        }
+        return update_json
