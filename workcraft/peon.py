@@ -45,7 +45,7 @@ class Peon:
         try:
             self.state = self.state.update_and_return(**kwargs)
             res = requests.post(
-                self.workcraft.stronghold_url + f"/pi/peons/{self.id}/update",
+                self.workcraft.stronghold_url + f"/api/peon/{self.id}/update",
                 headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
                 json=self.state.to_stronghold(),
             )
