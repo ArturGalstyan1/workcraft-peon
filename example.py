@@ -23,7 +23,7 @@ global_counter = 0
 @workcraft.task("simple_task")
 def simple_task(task_id: str, a: str) -> int:
     print(task_id, len(a))
-    time.sleep(5)
+    time.sleep(20)
     # raise ValueError("This is a test error mon")
 
     return 0
