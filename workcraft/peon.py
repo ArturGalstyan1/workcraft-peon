@@ -113,8 +113,6 @@ class Peon:
 
     def _statistics(self) -> None:
         while self.working and not self._stop_event.is_set():
-            # print stats for now
-            # logger.info(f"Queue size: {self.queue.qsize()}")
             try:
                 res = requests.post(
                     self.workcraft.stronghold_url + f"/api/peon/{self.id}/statistics",
@@ -208,9 +206,7 @@ class Peon:
                     )
 
                     if 200 <= res.status_code < 300:
-                        logger.info(
-                            f"Task updated successfully with status: {updated_task.status}"
-                        )
+                        logger.info(f"Task updated with status: {updated_task.status}")
                     else:
                         logger.error(
                             f"Failed to update task: {res.status_code} - {res.text}"
@@ -280,7 +276,35 @@ class Peon:
                     msg = json.loads(self.websocket.recv(timeout=1.0))
                     # logger.info(f"Received message: {msg}")
                     if msg["type"] == "new_task":
-                        task = Task.model_validate(msg["message"])
+                        try:
+                            task = Task.model_validate(msg["message"])
+                        except Exception as e:
+                            print(msg["message"])
+                            logger.error(
+                                f"Failed to validate task: {e}, likely malformed."
+                                " Setting task to INVALID"
+                            )
+                            task_id = msg["message"]["id"]
+                            if not task_id:
+                                logger.error("Task ID is missing")
+                                continue
+
+                            res = requests.post(
+                                f"{self.workcraft.stronghold_url}/api/task/{task_id}/update",
+                                headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                                json={
+                                    "status": "INVALID",
+                                    "result": f"Task is invalid: {e}",
+                                },
+                            )
+
+                            if 200 <= res.status_code < 300:
+                                logger.info(f"Task {task_id} set to INVALID")
+                            else:
+                                logger.error(
+                                    f"Failed to set task to INVALID: {res.text}"
+                                )
+                            continue
 
                         if task.id in self.seen_tasks_in_memory:
                             logger.info(f"Task {task.id} already seen, skipping")
@@ -358,7 +382,7 @@ class Peon:
                 thread.join(timeout=timeout)
                 if thread.is_alive():
                     logger.warning(
-                        f"Thread {thread.name} did not terminate within {timeout} seconds"
+                        f"Thread {thread.name} did not terminate within {timeout}s"
                     )
 
             if self.websocket:
