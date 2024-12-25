@@ -23,7 +23,7 @@ global_counter = 0
 @workcraft.task("simple_task")
 def simple_task(task_id: str, a: str) -> int:
     print(task_id, len(a))
-    time.sleep(20)
+    time.sleep(1)
     # raise ValueError("This is a test error mon")
 
     return 0
@@ -37,7 +37,7 @@ def postrun_handler(task_id, task_name, result, status):
 
 
 async def main():
-    n_tasks = 3
+    n_tasks = 30
     for _ in range(n_tasks):
         workcraft.send_task_sync(
             task_name="simple_task",

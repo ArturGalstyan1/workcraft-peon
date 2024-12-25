@@ -51,7 +51,8 @@ class Peon:
             )
 
             if 200 <= res.status_code < 300:
-                logger.info(f"Peon {self.id} updated successfully")
+                pass
+                # logger.info(f"Peon {self.id} updated successfully")
             else:
                 logger.error(f"Failed to update peon: {res.status_code} - {res.text}")
         except Exception as e:
