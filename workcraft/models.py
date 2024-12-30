@@ -99,7 +99,6 @@ class Workcraft:
 
     def __init__(self, stronghold_url: str, api_key: str):
         self.stronghold_url = stronghold_url
-        self.websocket_url = stronghold_url.replace("http", "ws") + "/ws?peon="
 
         m = hashlib.sha256()
         m.update(api_key.encode())
@@ -202,6 +201,11 @@ class State(BaseModel):
             setattr(self, key, value)
         setattr(self, "last_heartbeat", datetime.now())
         return self
+
+    def queue_to_stronghold(self) -> str:
+        if self.queues is None:
+            return "[]"
+        return "['" + "','".join(self.queues) + "']"
 
     def to_stronghold(self) -> dict:
         queues = None
