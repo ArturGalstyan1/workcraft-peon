@@ -242,100 +242,115 @@ class Peon:
         logger.info("Starting SSE thread")
 
         while self.working and not self._stop_event.is_set():
+            print("Connecting to server...")
             try:
+                logger.info(f"Attempting connection to {self.workcraft.stronghold_url}")
                 response = requests.get(
                     f"{self.workcraft.stronghold_url}/events?type=peon&peon_id={self.id}&queues={self.state.queue_to_stronghold()}",
                     stream=True,
                 )
-
+                print(response.status_code)
                 if response.status_code != 200:
                     logger.error(f"Failed to connect to server: {response.text}")
                     time.sleep(5)
-                    return
-                else:
-                    logger.info("Connected to server")
-                    self.connected = True
+                    continue
                 for line in response.iter_content(chunk_size=None):
                     if line:
-                        msg = line.decode().split("data:")[1]
-                        msg = json.loads(msg)
+                        try:
+                            msg = line.decode().split("data:")[1]
+                            msg = json.loads(msg)
 
-                        logger.info(f"Received message: {msg}")
-                        if msg["type"] == "new_task":
-                            try:
-                                task = Task.model_validate(msg["payload"])
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to validate task: {e}, likely malformed."
-                                    " Setting task to INVALID"
-                                )
-                                task_id = msg["payload"]["id"]
-                                if not task_id:
-                                    logger.error("Task ID is missing")
+                            logger.info(f"Received message: {msg}")
+                            if msg["type"] == "new_task":
+                                try:
+                                    task = Task.model_validate(msg["data"])
+                                except Exception as e:
+                                    logger.error(
+                                        f"Failed to validate task: {e}, likely malformed."
+                                        " Setting task to INVALID"
+                                    )
+                                    task_id = msg["payload"]["id"]
+                                    if not task_id:
+                                        logger.error("Task ID is missing")
+                                        continue
+
+                                    res = requests.post(
+                                        f"{self.workcraft.stronghold_url}/api/task/{task_id}/update",
+                                        headers={
+                                            "WORKCRAFT_API_KEY": self.workcraft.api_key
+                                        },
+                                        json={
+                                            "status": "INVALID",
+                                            "result": f"Task is invalid: {e}",
+                                        },
+                                    )
+
+                                    if 200 <= res.status_code < 300:
+                                        logger.info(f"Task {task_id} set to INVALID")
+                                    else:
+                                        logger.error(
+                                            f"Failed to set task to INVALID: {res.text}"
+                                        )
                                     continue
 
-                                res = requests.post(
-                                    f"{self.workcraft.stronghold_url}/api/task/{task_id}/update",
-                                    headers={
-                                        "WORKCRAFT_API_KEY": self.workcraft.api_key
-                                    },
-                                    json={
-                                        "status": "INVALID",
-                                        "result": f"Task is invalid: {e}",
-                                    },
-                                )
-
-                                if 200 <= res.status_code < 300:
-                                    logger.info(f"Task {task_id} set to INVALID")
-                                else:
-                                    logger.error(
-                                        f"Failed to set task to INVALID: {res.text}"
-                                    )
-                                continue
-
-                            if task.id in self.seen_tasks_in_memory:
-                                logger.info(f"Task {task.id} already seen, skipping")
-                                continue
-
-                            task.peon_id = self.id
-                            self.queue.put(task)
-
-                            self.seen_tasks_in_memory.add(task.id)
-
-                            try:
-                                res = requests.post(
-                                    self.workcraft.stronghold_url
-                                    + f"/api/task/{task.id}/update",
-                                    headers={
-                                        "WORKCRAFT_API_KEY": self.workcraft.api_key
-                                    },
-                                    json={"peon_id": self.id, "status": "ACKNOWLEDGED"},
-                                )
-
-                                if 200 <= res.status_code < 300:
+                                if task.id in self.seen_tasks_in_memory:
                                     logger.info(
-                                        "Task acknowledgement sent successfully"
+                                        f"Task {task.id} already seen, skipping"
                                     )
-                                else:
-                                    logger.error(
-                                        f"Failed to send task acknowledgement: {res.text}"
-                                    )
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to send task acknowledgement: {e}"
-                                )
+                                    continue
 
-                        elif msg["type"] == "cancel_task":
-                            task_id = msg["payload"]
-                            # either cancel the current task or remove from queue
-                            if (
-                                self.state.current_task
-                                and self.state.current_task == task_id
-                            ):
-                                self._task_cancelled.set()
-                                logger.info("Task cancellation acknowledged")
-                            else:
-                                self._cancel_task_in_queue(task_id)
+                                task.peon_id = self.id
+                                self.queue.put(task)
+
+                                self.seen_tasks_in_memory.add(task.id)
+
+                                try:
+                                    res = requests.post(
+                                        self.workcraft.stronghold_url
+                                        + f"/api/task/{task.id}/update",
+                                        headers={
+                                            "WORKCRAFT_API_KEY": self.workcraft.api_key
+                                        },
+                                        json={
+                                            "peon_id": self.id,
+                                            "status": "ACKNOWLEDGED",
+                                        },
+                                    )
+
+                                    if 200 <= res.status_code < 300:
+                                        logger.info(
+                                            "Task acknowledgement sent successfully"
+                                        )
+                                    else:
+                                        logger.error(
+                                            f"Failed to send task acknowledgement: {res.text}"
+                                        )
+                                except Exception as e:
+                                    logger.error(
+                                        f"Failed to send task acknowledgement: {e}"
+                                    )
+
+                            elif msg["type"] == "cancel_task":
+                                task_id = msg["payload"]
+                                # either cancel the current task or remove from queue
+                                if (
+                                    self.state.current_task
+                                    and self.state.current_task == task_id
+                                ):
+                                    self._task_cancelled.set()
+                                    logger.info("Task cancellation acknowledged")
+                                else:
+                                    self._cancel_task_in_queue(task_id)
+                            elif msg["type"] == "connected":
+                                self.connected = True
+                                logger.info("Connected to server")
+
+                        except IndexError:
+                            logger.debug(f"Received non-event line: {line.decode()}")
+                            continue
+                        except json.JSONDecodeError:
+                            logger.warning(f"Received invalid JSON: {line.decode()}")
+                            continue
             except requests.exceptions.ConnectionError as e:
                 logger.info(
                     f"Failed to retrieve stream, likely because server is offline. "
