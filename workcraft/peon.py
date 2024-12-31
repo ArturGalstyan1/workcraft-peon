@@ -25,7 +25,7 @@ class Peon:
 
         self.working = True
         self.queue = Queue()
-
+        self.connected = False
         self._sse_thread = threading.Thread(target=self._run_sse, daemon=True)
         self._heartbeat_thread = threading.Thread(target=self._heartbeat, daemon=True)
         self._processor_thread = threading.Thread(target=self._process, daemon=True)
@@ -34,50 +34,25 @@ class Peon:
         self._stop_event = threading.Event()
         self._task_cancelled = threading.Event()
 
-    def _run_sse(self):
-        try:
-            response = requests.get(
-                f"{self.workcraft.stronghold_url}/events?type=peon&peon_id={self.id}&queues={self.state.queue_to_stronghold()}",
-                stream=True,
-            )
-            for line in response.iter_content(chunk_size=None):
-                if line:
-                    message = line.decode().split("data:")[1]
-                    message = json.loads(message)
-                    if message["type"] == "new_task":
-                        task: Task = message["data"]
-                        if task.id in self.seen_tasks_in_memory:
-                            logger.info(f"Task {task.id} already seen, skipping")
-                            continue
-                        else:
-                            self.seen_tasks_in_memory.add(task.id)
-                            self.queue.put(task)
-                            logger.info(f"Task {task.id} added to queue")
-                    elif message["type"] == "cancel_task":
-                        pass
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"failed to connect, likely server offline {e}")
-            time.sleep(5)
-        except Exception as e:
-            logger.error(f"Failed to receive message: {e}")
-            time.sleep(1)
-
     def _update_and_send_state(self, **kwargs) -> None:
-        try:
-            self.state = self.state.update_and_return(**kwargs)
-            res = requests.post(
-                self.workcraft.stronghold_url + f"/api/peon/{self.id}/update",
-                headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
-                json=self.state.to_stronghold(),
-            )
+        if self.connected:
+            try:
+                self.state = self.state.update_and_return(**kwargs)
+                res = requests.post(
+                    self.workcraft.stronghold_url + f"/api/peon/{self.id}/update",
+                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                    json=self.state.to_stronghold(),
+                )
 
-            if 200 <= res.status_code < 300:
-                pass
-                # logger.info(f"Peon {self.id} updated successfully")
-            else:
-                logger.error(f"Failed to update peon: {res.status_code} - {res.text}")
-        except Exception as e:
-            logger.error(f"Failed to send peon update: {e}")
+                if 200 <= res.status_code < 300:
+                    pass
+                    # logger.info(f"Peon {self.id} updated successfully")
+                else:
+                    logger.error(
+                        f"Failed to update peon: {res.status_code} - {res.text}"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to send peon update: {e}")
 
     def work(self) -> None:
         logger.info("Starting peon...")
@@ -171,6 +146,18 @@ class Peon:
             try:
                 # logger.info(f"Processing task {task}, type: {type(task)}")
                 self._update_and_send_state(current_task=task.id, status="WORKING")
+
+                res = requests.post(
+                    f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
+                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                    json={"status": "RUNNING"},
+                )
+
+                if 200 <= res.status_code < 300:
+                    logger.info(f"Task {task.id} set to RUNNING")
+                else:
+                    raise Exception(f"Failed to set task to RUNNING: {res.text}")
+
                 self._task_cancelled.clear()
                 result_queue = Queue()
 
@@ -251,16 +238,23 @@ class Peon:
                 logger.error(f"Failed to send ping: {e}")
             self._stop_event.wait(5)  # Replace sleep with event wait
 
-    def _run_websocket(self):
+    def _run_sse(self):
         logger.info("Starting SSE thread")
 
         while self.working and not self._stop_event.is_set():
             try:
                 response = requests.get(
-                    f"{self.workcraft.stronghold_url}/events",
+                    f"{self.workcraft.stronghold_url}/events?type=peon&peon_id={self.id}&queues={self.state.queue_to_stronghold()}",
                     stream=True,
-                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
                 )
+
+                if response.status_code != 200:
+                    logger.error(f"Failed to connect to server: {response.text}")
+                    time.sleep(5)
+                    return
+                else:
+                    logger.info("Connected to server")
+                    self.connected = True
                 for line in response.iter_content(chunk_size=None):
                     if line:
                         msg = line.decode().split("data:")[1]
@@ -311,11 +305,11 @@ class Peon:
                             try:
                                 res = requests.post(
                                     self.workcraft.stronghold_url
-                                    + f"/api/task/{task.id}/acknowledgement",
+                                    + f"/api/task/{task.id}/update",
                                     headers={
                                         "WORKCRAFT_API_KEY": self.workcraft.api_key
                                     },
-                                    json={"peon_id": self.id},
+                                    json={"peon_id": self.id, "status": "ACKNOWLEDGED"},
                                 )
 
                                 if 200 <= res.status_code < 300:
@@ -331,7 +325,7 @@ class Peon:
                                     f"Failed to send task acknowledgement: {e}"
                                 )
 
-                        if msg["type"] == "cancel_task":
+                        elif msg["type"] == "cancel_task":
                             task_id = msg["payload"]
                             # either cancel the current task or remove from queue
                             if (
