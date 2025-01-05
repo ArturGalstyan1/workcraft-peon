@@ -1,6 +1,5 @@
 import json
 import threading
-import time
 import uuid
 from queue import Empty, Queue
 
@@ -248,11 +247,12 @@ class Peon:
                 response = requests.get(
                     f"{self.workcraft.stronghold_url}/events?type=peon&peon_id={self.id}&queues={self.state.queue_to_stronghold()}",
                     stream=True,
+                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
                 )
                 print(response.status_code)
                 if response.status_code != 200:
                     logger.error(f"Failed to connect to server: {response.text}")
-                    time.sleep(5)
+                    self._stop_event.wait(5)
                     continue
                 for line in response.iter_content(chunk_size=None):
                     if line:
@@ -356,7 +356,7 @@ class Peon:
                     f"Failed to retrieve stream, likely because server is offline. "
                     f"Raw error: {e}"
                 )
-                continue
+                self._stop_event.wait(5)
             except Exception as e:
                 logger.error(f"Failed to receive message: {e}")
                 continue
