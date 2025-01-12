@@ -214,9 +214,13 @@ class State(BaseModel):
 
         update_json = {
             "current_task": self.current_task if self.current_task else None,
+            "current_task_set": bool(self.current_task),
             "status": self.status,
+            "status_set": True,
             "last_heartbeat": self.last_heartbeat.isoformat(),
+            "last_heartbeat_set": True,
             "queues": queues,
+            "queues_set": bool(self.queues),
             "id": self.id,
         }
         return update_json
