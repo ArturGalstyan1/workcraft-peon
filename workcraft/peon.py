@@ -45,7 +45,9 @@ class Peon:
 
                 if 200 <= res.status_code < 300:
                     pass
-                    # logger.info(f"Peon {self.id} updated successfully")
+                    logger.info(
+                        f"Peon {self.id} updated successfully to {self.state.status}"
+                    )
                 else:
                     logger.error(
                         f"Failed to update peon: {res.status_code} - {res.text}"
@@ -200,7 +202,6 @@ class Peon:
                 else:
                     updated_task = task  # Use the cancelled task
 
-                # Always try to send the final status, even if cancelled
                 try:
                     res = requests.post(
                         f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
@@ -241,7 +242,8 @@ class Peon:
         logger.info("Starting SSE thread")
 
         while self.working and not self._stop_event.is_set():
-            print("Connecting to server...")
+            print("Connecting to server after 5 seconds...")
+            self._stop_event.wait(5)
             try:
                 logger.info(f"Attempting connection to {self.workcraft.stronghold_url}")
                 response = requests.get(
@@ -249,7 +251,6 @@ class Peon:
                     stream=True,
                     headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
                 )
-                print(response.status_code)
                 if response.status_code != 200:
                     logger.error(f"Failed to connect to server: {response.text}")
                     self._stop_event.wait(5)
@@ -266,7 +267,7 @@ class Peon:
                                     task = Task.model_validate(msg["data"])
                                 except Exception as e:
                                     logger.error(
-                                        f"Failed to validate task: {e}, likely malformed."
+                                        f"Failed to validate task: {e}, malformed."
                                         " Setting task to INVALID"
                                     )
                                     task_id = msg["payload"]["id"]
@@ -299,11 +300,6 @@ class Peon:
                                     )
                                     continue
 
-                                task.peon_id = self.id
-                                self.queue.put(task)
-
-                                self.seen_tasks_in_memory.add(task.id)
-
                                 try:
                                     res = requests.post(
                                         self.workcraft.stronghold_url
@@ -323,8 +319,17 @@ class Peon:
                                         )
                                     else:
                                         logger.error(
-                                            f"Failed to send task acknowledgement: {res.text}"
+                                            f"Failed to send task ack: {res.text}"
                                         )
+
+                                    self._update_and_send_state(
+                                        current_task=task.id, status="PREPARING"
+                                    )
+                                    task.peon_id = self.id
+                                    self.queue.put(task)
+
+                                    self.seen_tasks_in_memory.add(task.id)
+
                                 except Exception as e:
                                     logger.error(
                                         f"Failed to send task acknowledgement: {e}"

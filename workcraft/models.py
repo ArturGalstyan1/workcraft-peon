@@ -191,7 +191,7 @@ class Workcraft:
 
 class State(BaseModel):
     id: str
-    status: Literal["IDLE", "PREPARING", "WORKING", "OFFLINE"]
+    status: Literal["IDLE", "PREPARING", "WORKING", "OFFLINE", "PREPARING"]
     current_task: str | None = None
     queues: list[str] | None = None
     last_heartbeat: datetime = Field(default_factory=datetime.now)
