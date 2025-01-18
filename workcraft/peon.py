@@ -8,6 +8,7 @@ import requests
 from loguru import logger
 
 from workcraft.models import Task, Workcraft
+from workcraft.utils import capture_all_output, tenacious_request
 
 
 class Peon:
@@ -37,10 +38,12 @@ class Peon:
     def _sync(self, data: dict) -> None:
         if self.connected:
             try:
-                res = requests.post(
-                    self.workcraft.stronghold_url + f"/api/peon/{self.id}/update",
-                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
-                    json=data,
+                res = tenacious_request(
+                    lambda: requests.post(
+                        self.workcraft.stronghold_url + f"/api/peon/{self.id}/update",
+                        headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                        json=data,
+                    )
                 )
 
                 if 200 <= res.status_code < 300:
@@ -89,10 +92,12 @@ class Peon:
                 logger.info(f"Removing task {task_id} from queue")
                 task.status = "CANCELLED"
 
-                res = requests.post(
-                    f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
-                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
-                    json=Task.to_stronghold(task),
+                res = tenacious_request(
+                    lambda: requests.post(
+                        f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
+                        headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                        json=Task.to_stronghold(task),
+                    )
                 )
 
                 if 200 <= res.status_code < 300:
@@ -107,16 +112,19 @@ class Peon:
     def _statistics(self) -> None:
         while self.working and not self._stop_event.is_set():
             try:
-                res = requests.post(
-                    self.workcraft.stronghold_url + f"/api/peon/{self.id}/statistics",
-                    json={
-                        "type": "queue",
-                        "value": {
-                            "size": self.queue.qsize(),
+                res = tenacious_request(
+                    lambda: requests.post(
+                        self.workcraft.stronghold_url
+                        + f"/api/peon/{self.id}/statistics",
+                        json={
+                            "type": "queue",
+                            "value": {
+                                "size": self.queue.qsize(),
+                            },
+                            "peon_id": self.id,
                         },
-                        "peon_id": self.id,
-                    },
-                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                        headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                    )
                 )
 
                 if 200 <= res.status_code < 300:
@@ -156,10 +164,12 @@ class Peon:
                     }
                 )
 
-                res = requests.post(
-                    f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
-                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
-                    json={"status": "RUNNING"},
+                res = tenacious_request(
+                    lambda: requests.post(
+                        f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
+                        headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                        json={"status": "RUNNING"},
+                    )
                 )
 
                 if 200 <= res.status_code < 300:
@@ -172,8 +182,9 @@ class Peon:
 
                 def execute_task(_task):
                     try:
-                        result = self.workcraft.execute(_task)
-                        result_queue.put(result)
+                        with capture_all_output(self.workcraft, task.id):
+                            result = self.workcraft.execute(_task)
+                            result_queue.put(result)
                     except Exception as e:
                         result_queue.put(e)
 
@@ -211,10 +222,12 @@ class Peon:
                     updated_task = task  # Use the cancelled task
 
                 try:
-                    res = requests.post(
-                        f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
-                        headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
-                        json=Task.to_stronghold(updated_task),
+                    res = tenacious_request(
+                        lambda: requests.post(
+                            f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
+                            headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                            json=Task.to_stronghold(updated_task),
+                        )
                     )
 
                     if 200 <= res.status_code < 300:
@@ -301,15 +314,17 @@ class Peon:
                                         logger.error("Task ID is missing")
                                         continue
 
-                                    res = requests.post(
-                                        f"{self.workcraft.stronghold_url}/api/task/{task_id}/update",
-                                        headers={
-                                            "WORKCRAFT_API_KEY": self.workcraft.api_key
-                                        },
-                                        json={
-                                            "status": "INVALID",
-                                            "result": f"Task is invalid: {e}",
-                                        },
+                                    res = tenacious_request(
+                                        lambda: requests.post(
+                                            f"{self.workcraft.stronghold_url}/api/task/{task_id}/update",
+                                            headers={
+                                                "WORKCRAFT_API_KEY": self.workcraft.api_key
+                                            },
+                                            json={
+                                                "status": "INVALID",
+                                                "result": f"Task is invalid: {e}",
+                                            },
+                                        )
                                     )
 
                                     if 200 <= res.status_code < 300:
@@ -327,16 +342,18 @@ class Peon:
                                     continue
 
                                 try:
-                                    res = requests.post(
-                                        self.workcraft.stronghold_url
-                                        + f"/api/task/{task.id}/update",
-                                        headers={
-                                            "WORKCRAFT_API_KEY": self.workcraft.api_key
-                                        },
-                                        json={
-                                            "peon_id": self.id,
-                                            "status": "ACKNOWLEDGED",
-                                        },
+                                    res = tenacious_request(
+                                        lambda: requests.post(
+                                            self.workcraft.stronghold_url
+                                            + f"/api/task/{task.id}/update",
+                                            headers={
+                                                "WORKCRAFT_API_KEY": self.workcraft.api_key
+                                            },
+                                            json={
+                                                "peon_id": self.id,
+                                                "status": "ACKNOWLEDGED",
+                                            },
+                                        )
                                     )
 
                                     if 200 <= res.status_code < 300:
@@ -426,10 +443,12 @@ class Peon:
                     task.status = "PENDING"
                     task.peon_id = None
 
-                    res = requests.post(
-                        f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
-                        headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
-                        json=Task.to_stronghold(task),
+                    res = tenacious_request(
+                        lambda: requests.post(
+                            f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
+                            headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                            json=Task.to_stronghold(task),
+                        )
                     )
 
                     if 200 <= res.status_code < 300:
