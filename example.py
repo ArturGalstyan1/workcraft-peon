@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import sys
 import time
 
 from loguru import logger
@@ -23,8 +25,12 @@ global_counter = 0
 @workcraft.task("simple_task")
 def simple_task(task_id: str, a: str) -> int:
     print(task_id, len(a))
-    time.sleep(1)
-    # raise ValueError("This is a test error mon")
+    print("Regular print")
+    logging.info("Standard logging")
+    logger.info("Loguru logging")
+    sys.stderr.write("Direct stderr write\n")
+    time.sleep(10)
+    raise ValueError("This is a test error mon")
 
     return 0
 
@@ -37,7 +43,7 @@ def postrun_handler(task_id, task_name, result, status):
 
 
 async def main():
-    n_tasks = 30
+    n_tasks = 1
     for _ in range(n_tasks):
         workcraft.send_task_sync(
             task_name="simple_task",

@@ -51,8 +51,8 @@ class Task(BaseModel):
             "updated_at": task.updated_at.isoformat() + "Z",
             "peon_id": task.peon_id,
             "queue": task.queue,
-            "payload": task.payload.model_dump(),
-            "result": task.result,
+            "payload": task.payload.model_dump_json(),
+            "result": json.dumps(task.result),
             "retry_on_failure": task.retry_on_failure,
             "retry_count": task.retry_count,
             "retry_limit": task.retry_limit,
@@ -99,7 +99,6 @@ class Workcraft:
 
     def __init__(self, stronghold_url: str, api_key: str):
         self.stronghold_url = stronghold_url
-        self.websocket_url = stronghold_url.replace("http", "ws") + "/ws?peon="
 
         m = hashlib.sha256()
         m.update(api_key.encode())
@@ -192,7 +191,7 @@ class Workcraft:
 
 class State(BaseModel):
     id: str
-    status: Literal["IDLE", "PREPARING", "WORKING", "OFFLINE"]
+    status: Literal["IDLE", "PREPARING", "WORKING", "OFFLINE", "PREPARING"]
     current_task: str | None = None
     queues: list[str] | None = None
     last_heartbeat: datetime = Field(default_factory=datetime.now)
@@ -203,6 +202,11 @@ class State(BaseModel):
         setattr(self, "last_heartbeat", datetime.now())
         return self
 
+    def queue_to_stronghold(self) -> str:
+        if self.queues is None:
+            return "[]"
+        return "['" + "','".join(self.queues) + "']"
+
     def to_stronghold(self) -> dict:
         queues = None
         if self.queues is not None:
@@ -210,9 +214,13 @@ class State(BaseModel):
 
         update_json = {
             "current_task": self.current_task if self.current_task else None,
+            "current_task_set": bool(self.current_task),
             "status": self.status,
+            "status_set": True,
             "last_heartbeat": self.last_heartbeat.isoformat(),
+            "last_heartbeat_set": True,
             "queues": queues,
+            "queues_set": bool(self.queues),
             "id": self.id,
         }
         return update_json
