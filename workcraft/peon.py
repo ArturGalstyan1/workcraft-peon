@@ -294,12 +294,19 @@ class Peon:
                     logger.error(f"Failed to connect to server: {response.text}")
                     self._stop_event.wait(5)
                     continue
+                buffer = ""
                 for line in response.iter_content(chunk_size=None):
                     if line:
                         try:
-                            msg = line.decode().split("data:")[1]
+                            buffer += line.decode()
+
+                            if not buffer.endswith("\n\n"):
+                                continue
+
+                            msg = buffer.split("data:")[1]
                             msg = json.loads(msg)
 
+                            buffer = ""
                             logger.info(f"Received message: {msg}")
                             if msg["type"] == "new_task":
                                 try:
