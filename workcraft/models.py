@@ -139,12 +139,46 @@ class Workcraft:
 
     def execute(self, task: Task) -> Task:
         try:
+            if self.prerun_handler_fn:
+                try:
+                    self.prerun_handler_fn(
+                        task.id,
+                        task.task_name,
+                        *task.payload.prerun_handler_args,
+                        **task.payload.prerun_handler_kwargs,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to execute prerun handler: {e}")
+                    logger.warning(
+                        f"Task {task.id} will still be executed, "
+                        "but the prerun handler failed. This may cause issues "
+                        "with the task execution. Please check the logs."
+                    )
+
             task_fn = self.tasks[task.task_name]
             result = task_fn(
                 task.id, *task.payload.task_args, **task.payload.task_kwargs
             )
             task.result = json.dumps(result)
             task.status = "SUCCESS"
+
+            if self.postrun_handler_fn:
+                try:
+                    self.postrun_handler_fn(
+                        task.id,
+                        task.task_name,
+                        result,
+                        task.status,
+                        *task.payload.postrun_handler_args,
+                        **task.payload.postrun_handler_kwargs,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to execute postrun handler: {e}")
+                    logger.warning(
+                        f"Task {task.id} was executed successfully, "
+                        "but the postrun handler failed. Please check the logs."
+                    )
+
         except Exception as e:
             import traceback
 
@@ -152,7 +186,6 @@ class Workcraft:
             logger.error(f"Failed to execute task: {e}")
             task.status = "FAILURE"
             task.result = str(e)
-            task.retry_count += 1
         finally:
             task.updated_at = datetime.now()
             return task

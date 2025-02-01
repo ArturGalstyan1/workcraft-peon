@@ -35,6 +35,11 @@ def simple_task(task_id: str, a: str) -> int:
     return 0
 
 
+@workcraft.prerun_handler()
+def prerun_handler(task_id, task_name):
+    logger.info(f"PR called for {task_id} and {task_name}!")
+
+
 @workcraft.postrun_handler()
 def postrun_handler(task_id, task_name, result, status):
     logger.info(
