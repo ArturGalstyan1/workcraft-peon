@@ -307,7 +307,7 @@ class Peon:
                             msg = json.loads(msg)
 
                             buffer = ""
-                            logger.info(f"Received message: {msg}")
+                            # logger.info(f"Received message: {msg}")
                             if msg["type"] == "new_task":
                                 try:
                                     task = Task.model_validate(msg["data"])
