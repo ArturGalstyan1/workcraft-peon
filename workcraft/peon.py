@@ -35,6 +35,9 @@ class Peon:
         self._stop_event = threading.Event()
         self._task_cancelled = threading.Event()
 
+        self.last_heartbeat_print = datetime.datetime.now()
+        self.heartbeat_messages = []
+
     def _sync(self, data: dict) -> None:
         if self.connected:
             try:
@@ -401,7 +404,17 @@ class Peon:
                                 self.connected = True
                                 logger.info("Connected to server")
                             elif msg["type"] == "heartbeat":
-                                logger.info("Received heartbeat. Zug zug.")
+                                self.heartbeat_messages.append(msg)
+                                time_since_last_print = (
+                                    datetime.datetime.now() - self.last_heartbeat_print
+                                ).seconds
+
+                                if time_since_last_print > 30:
+                                    logger.info(
+                                        f"Got {len(self.heartbeat_messages)} heartbeats"
+                                        " in the last 30 seconds"
+                                    )
+                                    self.last_heartbeat_print = datetime.datetime.now()
 
                         except IndexError:
                             logger.debug(f"Received non-event line: {line.decode()}")
