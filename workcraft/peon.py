@@ -400,6 +400,8 @@ class Peon:
                             elif msg["type"] == "connected":
                                 self.connected = True
                                 logger.info("Connected to server")
+                            elif msg["type"] == "heartbeat":
+                                logger.info("Received heartbeat. Zug zug.")
 
                         except IndexError:
                             logger.debug(f"Received non-event line: {line.decode()}")

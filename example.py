@@ -30,7 +30,7 @@ def simple_task(task_id: str, a: str) -> int:
     logger.info("Loguru logging")
     sys.stderr.write("Direct stderr write\n")
     time.sleep(10)
-    raise ValueError("This is a test error mon")
+    # raise ValueError("This is a test error mon")
 
     return 0
 
