@@ -1,4 +1,3 @@
-import hashlib
 import json
 import uuid
 from collections.abc import Callable
@@ -99,10 +98,7 @@ class Workcraft:
 
     def __init__(self, stronghold_url: str, api_key: str):
         self.stronghold_url = stronghold_url
-
-        m = hashlib.sha256()
-        m.update(api_key.encode())
-        self.api_key = m.hexdigest()
+        self.api_key = api_key
 
         self.tasks: dict[str, Callable] = {}
         self.setup_handler_fn: Callable | None = None
