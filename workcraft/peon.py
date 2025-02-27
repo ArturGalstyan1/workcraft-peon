@@ -50,6 +50,9 @@ class Peon:
                     )
                 )
 
+                if "current_task_set" in data and "current_task" in data:
+                    self.current_task = data["current_task"]
+
                 if 200 <= res.status_code < 300:
                     pass
                 else:
@@ -87,30 +90,10 @@ class Peon:
             self.stop()
 
     def _cancel_task_in_queue(self, task_id: str) -> None:
-        # Remove task from queue
         for i in range(self.queue.qsize()):
             task = self.queue.get()
             if task.id != task_id:
                 self.queue.put(task)
-            else:
-                logger.info(f"Removing task {task_id} from queue")
-                task.status = "CANCELLED"
-
-                res = tenacious_request(
-                    lambda: requests.post(
-                        f"{self.workcraft.stronghold_url}/api/task/{task.id}/update",
-                        headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
-                        json=Task.to_stronghold(task),
-                    )
-                )
-
-                if 200 <= res.status_code < 300:
-                    logger.info(f"Task {task_id} removed from queue")
-                else:
-                    logger.error(f"Failed to remove task from queue: {res.text}")
-
-                self.queue.task_done()
-                break
         logger.info(f"Task {task_id} removed from queue")
 
     def _statistics(self) -> None:
@@ -154,7 +137,6 @@ class Peon:
                         "status_set": True,
                     }
                 )
-                self.current_task = None
                 continue
 
             try:
@@ -198,9 +180,7 @@ class Peon:
                 # Monitor for cancellation or completion
                 cancelled = False
                 while task_thread.is_alive():
-                    if (
-                        self._task_cancelled.is_set() or self._stop_event.is_set()
-                    ):  # Check both events
+                    if self._task_cancelled.is_set() or self._stop_event.is_set():
                         logger.info("Task cancellation requested")
                         task_thread.join(timeout=5)
                         if task_thread.is_alive():
@@ -311,8 +291,7 @@ class Peon:
                             msg = json.loads(msg)
 
                             buffer = ""
-                            # logger.info(f"Received message: {msg}")
-                            if msg["type"] == "new_task":
+                            if msg["type"] == "new_task" and self.connected:
                                 try:
                                     task = Task.model_validate(msg["data"])
                                 except Exception as e:
@@ -392,10 +371,9 @@ class Peon:
                                     logger.error(
                                         f"Failed to send task acknowledgement: {e}"
                                     )
-
-                            elif msg["type"] == "cancel_task":
-                                task_id = msg["payload"]
-                                # either cancel the current task or remove from queue
+                            elif msg["type"] == "cancel_task" and self.connected:
+                                logger.info(f"Received message: {msg}")
+                                task_id = msg["task_id"]
                                 if self.current_task and self.current_task == task_id:
                                     self._task_cancelled.set()
                                     logger.info("Task cancellation acknowledged")

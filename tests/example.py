@@ -92,7 +92,7 @@ def simple_task(task_id: str, a: str) -> int:
     print("Regular print")
     logging.info("Standard logging")
     sys.stderr.write("Direct stderr write\n")
-    time.sleep(5)
+    time.sleep(100)
     if random.randint(0, 10) < 2:
         raise ValueError("This is a test error mon")
 
@@ -110,7 +110,7 @@ def postrun_handler(task_id, task_name, result, status):
 
 
 async def main():
-    n_tasks = 1000
+    n_tasks = 1
     for _ in tqdm(range(n_tasks)):
         workcraft.send_task_sync(
             task_name="simple_task",
@@ -119,7 +119,8 @@ async def main():
             ),
             retry_on_failure=True,
             retry_limit=3,
-            queue=random.choice(["A", "B", "C"]),
+            # queue=random.choice(["A", "B", "C"]),
+            queue="A",
         )
 
 
