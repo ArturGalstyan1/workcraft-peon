@@ -88,6 +88,7 @@ global_counter = 0
 
 @workcraft.task("simple_task")
 def simple_task(task_id: str, a: str) -> int:
+    raise ValueError("This is a test error mon")
     print(task_id, len(a))
     print("Regular print")
     logging.info("Standard logging")
@@ -115,7 +116,7 @@ async def main():
         workcraft.send_task_sync(
             task_name="simple_task",
             payload=TaskPayload(
-                task_args=[generate_mb_json(1)],
+                task_args=["wtf"],
             ),
             retry_on_failure=True,
             retry_limit=3,

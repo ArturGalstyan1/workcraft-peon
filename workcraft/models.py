@@ -174,7 +174,7 @@ class Workcraft:
                     self.postrun_handler_fn(
                         task.id,
                         task.task_name,
-                        result,
+                        task.result,
                         task.status,
                         *task.payload.postrun_handler_args,
                         **task.payload.postrun_handler_kwargs,

@@ -167,12 +167,10 @@ class Peon:
                 result_queue = Queue()
 
                 def execute_task(_task):
-                    try:
-                        with capture_all_output(self.workcraft, task.id):
-                            result = self.workcraft.execute(_task)
-                            result_queue.put(result)
-                    except Exception as e:
-                        result_queue.put(e)
+                    with capture_all_output(self.workcraft, task.id):
+                        result = self.workcraft.execute(_task)
+                        result_queue.put(result)
+                        return
 
                 task_thread = threading.Thread(target=execute_task, args=(task,))
                 task_thread.start()
@@ -289,7 +287,6 @@ class Peon:
 
                             msg = buffer.split("data:")[1]
                             msg = json.loads(msg)
-
                             buffer = ""
                             if msg["type"] == "new_task" and self.connected:
                                 try:
