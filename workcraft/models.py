@@ -2,11 +2,17 @@ import json
 import uuid
 from collections.abc import Callable
 from datetime import datetime
+from typing import ClassVar
 
 import requests
 from beartype.typing import Any, Literal, Protocol
 from loguru import logger
 from pydantic import BaseModel, Field
+
+
+class Separators(BaseModel):
+    WORKCRAFT_SSE_SEPARATOR_START: ClassVar = "###WORKCRAFT_MESSAGE_START###"
+    WORKCRAFT_SSE_SEPARATOR_END: ClassVar = "###WORKCRAFT_MESSAGE_END###"
 
 
 class WebsocketMessage(BaseModel):

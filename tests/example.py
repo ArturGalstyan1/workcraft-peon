@@ -68,8 +68,8 @@ def generate_mb_json(n: int) -> dict:
 
 
 # Example usage:
-# data = generate_mb_json(5)  # Generates ~5MB JSON
-# json_str = json.dumps(data)  # Convert to JSON string if needed
+data = generate_mb_json(5)  # Generates ~5MB JSON
+json_str = json.dumps(data)  # Convert to JSON string if needed
 
 
 stronghold_url = "http://localhost:6112"
@@ -88,14 +88,14 @@ global_counter = 0
 
 @workcraft.task("simple_task")
 def simple_task(task_id: str, a: str) -> int:
-    raise ValueError("This is a test error mon")
+    # raise ValueError("This is a test error mon")
     print(task_id, len(a))
     print("Regular print")
     logging.info("Standard logging")
     sys.stderr.write("Direct stderr write\n")
     time.sleep(100)
-    if random.randint(0, 10) < 2:
-        raise ValueError("This is a test error mon")
+    # if random.randint(0, 10) < 2:
+    #     raise ValueError("This is a test error mon")
 
     return 0
 
@@ -115,9 +115,7 @@ async def main():
     for _ in tqdm(range(n_tasks)):
         workcraft.send_task_sync(
             task_name="simple_task",
-            payload=TaskPayload(
-                task_args=["wtf"],
-            ),
+            payload=TaskPayload(task_args=[json_str]),
             retry_on_failure=True,
             retry_limit=3,
             # queue=random.choice(["A", "B", "C"]),

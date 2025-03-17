@@ -7,7 +7,7 @@ from queue import Empty, Queue
 import requests
 from loguru import logger
 
-from workcraft.models import Task, Workcraft
+from workcraft.models import Separators, Task, Workcraft
 from workcraft.utils import capture_all_output, tenacious_request
 
 
@@ -282,10 +282,20 @@ class Peon:
                         try:
                             buffer += line.decode()
 
-                            if not buffer.endswith("\n\n"):
+                            if not buffer.endswith(
+                                Separators.WORKCRAFT_SSE_SEPARATOR_END
+                            ):
                                 continue
 
-                            msg = buffer.split("data:")[1]
+                            if not buffer.startswith(
+                                Separators.WORKCRAFT_SSE_SEPARATOR_START
+                            ) and not buffer.endswith(
+                                Separators.WORKCRAFT_SSE_SEPARATOR_END
+                            ):
+                                raise ValueError("Invalid buffer data received")
+                            msg = buffer.split(
+                                Separators.WORKCRAFT_SSE_SEPARATOR_START
+                            )[1].split(Separators.WORKCRAFT_SSE_SEPARATOR_END)[0]
                             msg = json.loads(msg)
                             buffer = ""
                             if msg["type"] == "new_task" and self.connected:
@@ -399,7 +409,7 @@ class Peon:
                             logger.debug(f"Received non-event line: {line.decode()}")
                             continue
                         except json.JSONDecodeError:
-                            logger.warning(f"Received invalid JSON: {line.decode()}")
+                            logger.warning(f"Received invalid JSON: {msg}")
                             continue
             except requests.exceptions.ConnectionError as e:
                 logger.info(
