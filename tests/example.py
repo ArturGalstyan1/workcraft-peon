@@ -119,7 +119,7 @@ async def main():
             retry_on_failure=True,
             retry_limit=3,
             # queue=random.choice(["A", "B", "C"]),
-            queue="A",
+            queue="D",
         )
 
 

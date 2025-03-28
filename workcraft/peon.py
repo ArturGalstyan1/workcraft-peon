@@ -1,11 +1,13 @@
 import datetime
 import json
 import threading
+import time
 import uuid
 from queue import Empty, Queue
 
 import requests
 from loguru import logger
+from requests.adapters import HTTPAdapter
 
 from workcraft.models import Separators, Task, Workcraft
 from workcraft.utils import capture_all_output, tenacious_request
@@ -252,7 +254,7 @@ class Peon:
                 )
             except Exception as e:
                 logger.error(f"Failed to send ping: {e}")
-            self._stop_event.wait(5)  # Replace sleep with event wait
+            self._stop_event.wait(5)
 
     def _queue_to_stronghold(self) -> str:
         if self.queues is None:
@@ -261,27 +263,49 @@ class Peon:
 
     def _run_sse(self):
         logger.info("Starting SSE thread")
+        session = requests.Session()
+        adapter = HTTPAdapter(
+            pool_connections=1, pool_maxsize=1, max_retries=10, pool_block=False
+        )
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
 
         while self.working and not self._stop_event.is_set():
             print("Connecting to server after 5 seconds...")
             self._stop_event.wait(5)
             try:
                 logger.info(f"Attempting connection to {self.workcraft.stronghold_url}")
-                response = requests.get(
+                response = session.get(
                     f"{self.workcraft.stronghold_url}/events?type=peon&peon_id={self.id}&queues={self._queue_to_stronghold()}",
                     stream=True,
-                    headers={"WORKCRAFT_API_KEY": self.workcraft.api_key},
+                    headers={
+                        "WORKCRAFT_API_KEY": self.workcraft.api_key,
+                        "Connection": "keep-alive",
+                        "Keep-Alive": "timeout=60, max=1000",
+                    },
+                    timeout=(5, 30),
                 )
                 if response.status_code != 200:
                     logger.error(f"Failed to connect to server: {response.text}")
                     self._stop_event.wait(5)
                     continue
                 buffer = ""
+                buffer_last_update = time.time()
+                max_buffer_age = 60
                 for line in response.iter_content(chunk_size=None):
                     if line:
                         try:
+                            current_time = time.time()
+                            if (
+                                buffer
+                                and current_time - buffer_last_update > max_buffer_age
+                            ):
+                                logger.warning(
+                                    f"Discarding stale buffer after {max_buffer_age} seconds: {buffer[:100]}..."
+                                )
+                                buffer = ""
                             buffer += line.decode()
-
+                            buffer_last_update = current_time
                             if not buffer.endswith(
                                 Separators.WORKCRAFT_SSE_SEPARATOR_END
                             ):
@@ -407,9 +431,11 @@ class Peon:
 
                         except IndexError:
                             logger.debug(f"Received non-event line: {line.decode()}")
+                            self._stop_event.wait(5)
                             continue
                         except json.JSONDecodeError:
                             logger.warning(f"Received invalid JSON: {msg}")
+                            self._stop_event.wait(5)
                             continue
             except requests.exceptions.ConnectionError as e:
                 logger.info(
